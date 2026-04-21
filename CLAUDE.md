@@ -216,12 +216,11 @@ Il testo embeddato è `f"{title} {content}"` — logica centralizzata in `Articl
 
 ## PROSSIMI PASSI
 
-1. **Article Mock Data** - Ci servono piu articoli, semanticamente differenti per poter testare meglio
-2. **Frontend React** — consuma tutte le API
-3. **Deploy** — Railway o Render con CI/CD da GitHub
-4. **Alembic** — migration per cambi schema in produzione
-5. **Ruoli utente** — campo `is_admin` per proteggere endpoint admin
-6. **Refresh token** — per gestione logout e revoca sessioni
+1. **Frontend React** — consuma tutte le API
+2. **Deploy** — Railway o Render con CI/CD da GitHub
+3. **Alembic** — migration per cambi schema in produzione
+4. **Ruoli utente** — campo `is_admin` per proteggere endpoint admin
+5. **Refresh token** — per gestione logout e revoca sessioni
 
 ---
 
