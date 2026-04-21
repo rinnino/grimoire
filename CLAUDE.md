@@ -155,6 +155,7 @@ POST   /auth/token             login (form) → JWT  [solo ENVIRONMENT=developme
 GET    /articles               lista articoli paginata [autenticato]
 GET    /articles/search        full-text search con ranking [autenticato]
 GET    /articles/semantic-search  ricerca semantica con ranking per similarità coseno [autenticato]
+GET    /articles/hybrid-search    ricerca ibrida full-text + semantica con RRF [autenticato]
 GET    /articles/{id}          articolo singolo [autenticato]
 POST   /articles               crea articolo + genera embedding [autenticato]
 PUT    /articles/{id}          modifica articolo (partial update) [autenticato + autore]
@@ -215,8 +216,7 @@ Il testo embeddato è `f"{title} {content}"` — logica centralizzata in `Articl
 
 ## PROSSIMI PASSI
 
-
-1. **Hybrid search** — combinare full-text e semantica in un unico endpoint
+1. **Article Mock Data** - Ci servono piu articoli, semanticamente differenti per poter testare meglio
 2. **Frontend React** — consuma tutte le API
 3. **Deploy** — Railway o Render con CI/CD da GitHub
 4. **Alembic** — migration per cambi schema in produzione
@@ -242,3 +242,6 @@ Il testo embeddato è `f"{title} {content}"` — logica centralizzata in `Articl
 - Semantic search filtra articoli con `embedding IS NOT NULL` — `/admin/reindex` li allinea
 - `lifespan` in `main.py` esegue reindex automatico all'avvio solo in `ENVIRONMENT=development`, attendendo che Ollama sia pronto prima di procedere
 - Route `def` (sincrone) girano su thread pool automatico di FastAPI — corretto con SQLAlchemy sincrono
+- Hybrid search usa Reciprocal Rank Fusion (RRF): combina rank full-text e semantico con 1/(60+rank), FULL OUTER JOIN tra le due CTE
+- `candidates` (default 50) controlla quanti risultati considera ciascuna CTE prima della fusione
+- Hybrid search usa `text()` di SQLAlchemy con prepared statement — query CTE troppo complessa per l'ORM

@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 from app.database import get_db
@@ -115,6 +115,66 @@ def semantic_search_articles(
     for article, dist in results:
         article.similarity = 1 - dist
     return [article for article, _ in results]
+
+
+@app.get("/articles/hybrid-search",
+         response_model=list[models.ArticleHybridSearchResponse])
+def hybrid_search_articles(
+        q: str,
+        page: int = 1,
+        limit: int = 10,
+        candidates: int = 50,
+        db: Session = Depends(get_db),
+        current_user: dict = Depends(get_current_user)
+        ):
+    offset = (page - 1) * limit
+    query_embedding = embedding_service.embed(q)
+
+    sql = text("""
+        WITH full_text AS (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                       ORDER BY ts_rank(search_vector,
+                                        plainto_tsquery('simple', :q)) DESC
+                   ) AS rank
+            FROM articles
+            WHERE search_vector @@ plainto_tsquery('simple', :q)
+            LIMIT :candidates
+        ),
+        semantic AS (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                       ORDER BY embedding <=> CAST(:embedding AS vector) ASC
+                   ) AS rank
+            FROM articles
+            WHERE embedding IS NOT NULL
+            LIMIT :candidates
+        ),
+        rrf AS (
+            SELECT
+                COALESCE(ft.id, sem.id) AS id,
+                COALESCE(1.0 / (60 + ft.rank), 0) +
+                COALESCE(1.0 / (60 + sem.rank), 0) AS rrf_score
+            FROM full_text ft
+            FULL OUTER JOIN semantic sem ON ft.id = sem.id
+        )
+        SELECT a.id, a.title, a.content, a.author_id,
+               a.tags, a.created_at, r.rrf_score
+        FROM articles a
+        JOIN rrf r ON a.id = r.id
+        ORDER BY r.rrf_score DESC
+        LIMIT :limit OFFSET :offset
+    """)
+
+    rows = db.execute(sql, {
+        "q": q,
+        "embedding": str(query_embedding),
+        "limit": limit,
+        "offset": offset,
+        "candidates": candidates
+    }).mappings().all()
+
+    return [models.ArticleHybridSearchResponse(**row) for row in rows]
 
 
 @app.get("/articles/{article_id}", response_model=models.ArticleResponse)

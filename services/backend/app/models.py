@@ -26,6 +26,10 @@ class ArticleSearchResponse(ArticleResponse):
     similarity: float
 
 
+class ArticleHybridSearchResponse(ArticleResponse):
+    rrf_score: float
+
+
 class ArticleUpdate(BaseModel):
     title: str | None = None
     content: str | None = None
