@@ -1,0 +1,4 @@
+services:
+  db:
+    volumes:
+      - ./db/02_mock_data.sql:/docker-entrypoint-initdb.d/02_mock_data.sql
