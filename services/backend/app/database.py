@@ -1,11 +1,11 @@
-import os
+from app.config import settings
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 DATABASE_URL = (
-        f"postgresql://{os.getenv('POSTGRES_USER')}"
-        f":{os.getenv('POSTGRES_PASSWORD')}"
-        f"@db:5432/{os.getenv('POSTGRES_DB')}"
+    f"postgresql://{settings.postgres_user}"
+    f":{settings.postgres_password}"
+    f"@db:5432/{settings.postgres_db}"
 )
 
 

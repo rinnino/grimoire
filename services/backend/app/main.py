@@ -9,13 +9,13 @@ from app import entities, models, auth, permissions
 from app.auth import get_current_user
 from app.embedding.factory import get_embedding_service
 from contextlib import asynccontextmanager
+from app.config import settings, Environment
 import asyncio
-import os
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if os.getenv("ENVIRONMENT") == "development":
+    if settings.environment == Environment.development:
         await _dev_reindex()
     yield
 
@@ -292,7 +292,7 @@ def login(credentials: models.LoginRequest, db: Session = Depends(get_db)):
     return models.TokenResponse(access_token=token, token_type="bearer")
 
 
-if os.getenv("ENVIRONMENT") == "development":
+if settings.environment == Environment.development:
     @app.post("/auth/token", response_model=models.TokenResponse)
     def token(
         form_data: OAuth2PasswordRequestForm = Depends(),
