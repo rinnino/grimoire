@@ -2,6 +2,9 @@
 .env*
 !.env.example
 
+# secrets
+secrets/
+
 # Python
 __pycache__/
 *.pyc
