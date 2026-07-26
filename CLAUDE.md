@@ -2,11 +2,11 @@
 
 ## AMBIENTE DI SVILUPPO
 
-- Arch Linux su Hyper-V (8GB RAM, 4 core virtuali, Ryzen 3800X)
-- IP statico 192.168.1.150, accesso via SSH
-- Vim con flake8/ALE per validazione PEP8
-- pgAdmin 4 su Windows per visualizzare il DB
-- Python 3.14
+- CachyOS (Arch-based), sviluppo in locale
+- Vim 9.2 con ALE + flake8 per validazione PEP8
+- DBeaver per ispezionare il DB (localhost:5432)
+- Docker + Docker Compose v2+ (comando `docker compose`, non `docker-compose`)
+- Python 3.14.6 (nel container)
 
 ---
 
@@ -17,7 +17,8 @@ Backend:     Python 3.14 + FastAPI
 Database:    PostgreSQL 17 + pgvector
 ORM:         SQLAlchemy
 Validazione: Pydantic
-Container:   Docker + docker-compose
+Config:      pydantic-settings (Settings centralizzato)
+Container:   Docker + Docker Compose v2+
 Frontend:    React (da fare)
 AI:          Ollama + nomic-embed-text (locale, 768 dimensioni)
 Deploy:      Railway o Render (da fare)
@@ -37,6 +38,7 @@ grimoire/
 │   │   ├── app/
 │   │   │   ├── __init__.py
 │   │   │   ├── main.py          ← FastAPI endpoints
+│   │   │   ├── config.py        ← Settings centralizzato (pydantic-settings)
 │   │   │   ├── database.py      ← engine, SessionLocal, Base, get_db
 │   │   │   ├── entities.py      ← modelli SQLAlchemy
 │   │   │   ├── models.py        ← modelli Pydantic
@@ -53,10 +55,15 @@ grimoire/
 │   └── ollama/
 │       ├── Dockerfile           ← FROM ollama/ollama + start.sh
 │       └── start.sh             ← ollama serve + pull automatico modello
+├── secrets/                     ← file dei segreti, gitignorata (generata da set_dev_env.sh)
+│   ├── postgres_password
+│   └── secret_key
 ├── docker-compose.yml
 ├── docker-compose.override.yml  ← solo dev, aggiunge mock data
-├── .env.development
-├── .env.example
+├── set_dev_env.sh               ← prepara l'ambiente di sviluppo (segreti + .env)
+├── .env.development             ← config non sensibili, gitignorato
+├── .env.example                 ← template config (solo valori non sensibili)
+├── README.md                    ← quick start per chi clona
 └── .gitignore
 ```
 
@@ -109,29 +116,37 @@ Tre container:
 - `knowledge-base-backend` — FastAPI
 - `knowledge-base-ollama` — Ollama con pull automatico del modello
 
+I segreti (`postgres_password`, `secret_key`) sono definiti come Docker secrets e
+montati nei container sotto `/run/secrets/`. Il servizio `db` riceve la password
+via `POSTGRES_PASSWORD_FILE` (supporto nativo dell'immagine Postgres).
+
 ### Comandi
 
 ```bash
 # sviluppo con mock data
-docker-compose -f docker-compose.yml -f docker-compose.override.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
 
-# sviluppo senza mock data (default)
-docker-compose up -d
+# sviluppo senza mock data
+docker compose -f docker-compose.yml up -d
 
 # rebuild completo con reset DB
-docker-compose -f docker-compose.yml -f docker-compose.override.yml down -v
-docker-compose -f docker-compose.yml -f docker-compose.override.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.override.yml down -v
+docker compose -f docker-compose.yml -f docker-compose.override.yml up -d --build
 ```
 
 ---
 
-## VARIABILI D'AMBIENTE (.env.development)
+## CONFIGURAZIONE E SEGRETI
+
+La configurazione è separata in due canali distinti.
+
+### Configurazioni non sensibili (`.env.development`)
+
+Caricate come variabili d'ambiente dai container via `env_file`.
 
 ```
 POSTGRES_USER=kbuser
-POSTGRES_PASSWORD=...
 POSTGRES_DB=knowledgebase
-SECRET_KEY=...
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 ENVIRONMENT=development
 EMBEDDING_PROVIDER=ollama
@@ -139,6 +154,31 @@ EMBEDDING_MODEL=nomic-embed-text
 EMBEDDING_DIMENSIONS=768
 OLLAMA_URL=http://ollama:11434
 ```
+
+### Segreti (`secrets/`, montati in `/run/secrets/`)
+
+Un file per segreto, contenente solo il valore (senza newline finale).
+Generati da `set_dev_env.sh`, mai versionati.
+
+```
+secrets/postgres_password
+secrets/secret_key
+```
+
+### Lettura nel codice
+
+Tutta la configurazione è centralizzata in `app/config.py` (classe `Settings`,
+pydantic-settings). I segreti vengono letti dalla secrets directory
+`/run/secrets/`, le configurazioni dalle variabili d'ambiente. Il resto del
+codice accede solo tramite l'oggetto `settings`, senza `os.getenv` sparsi.
+
+Nota sulla precedenza: pydantic-settings dà priorità alle variabili d'ambiente
+rispetto alla secrets directory. Per questo i segreti non devono mai comparire
+anche nel `.env`, altrimenti l'ambiente vincerebbe sui file.
+
+Campi obbligatori (nessun default, l'app non parte se mancano):
+`postgres_password`, `secret_key`, `postgres_user`, `postgres_db`, `environment`.
+`environment` è vincolato ai valori `development` o `production`.
 
 ---
 
@@ -168,8 +208,10 @@ POST   /admin/reindex          rigenera embedding articoli NULL [autenticato]
 
 ## AUTENTICAZIONE E AUTORIZZAZIONE
 
-- **JWT** con algoritmo HS256, scadenza configurabile via `.env`
-- **bcrypt** per hashing password (nessun default hardcoded)
+- **JWT** con algoritmo HS256, scadenza configurabile via `ACCESS_TOKEN_EXPIRE_MINUTES`
+- **bcrypt** per hashing password
+- `SECRET_KEY` è un segreto: letto da `/run/secrets/secret_key`, obbligatorio
+  (l'app non parte se manca)
 - **Livelli di protezione:**
   - 401 — non autenticato
   - 403 — autenticato ma non autorizzato (non è l'autore)
@@ -187,7 +229,7 @@ EmbeddingService (ABC)          ← base.py
     └── OllamaEmbeddingService  ← ollama.py
 
 get_embedding_service()         ← factory.py
-    legge EMBEDDING_PROVIDER dal .env
+    legge settings.embedding_provider
     restituisce il provider giusto
 ```
 
@@ -208,20 +250,31 @@ Il testo embeddato è `f"{title} {content}"` — logica centralizzata in `Articl
 - Uso: `entities.Article()`, `models.ArticleCreate`, `models.ArticleResponse`
 - `from_attributes=True` nei modelli Pydantic di risposta
 - `get_db()` usa `yield` per gestire ciclo di vita sessione con `Depends()`
-- Nessun valore di default hardcoded per configurazioni critiche (`SECRET_KEY`, `EMBEDDING_DIMENSIONS`)
-- Configurazioni operative sempre nel `.env`, mai nel codice sorgente
+- Configurazione centralizzata in `app/config.py` — nessun `os.getenv` sparso nel codice
+- I campi critici (segreti, credenziali DB, `environment`) sono obbligatori senza default:
+  se mancano, `Settings` fallisce e l'app non parte
+- Solo i parametri operativi innocui hanno un default nel codice (es. `ollama_url`,
+  `embedding_model`) — restano comunque sovrascrivibili dall'ambiente
 - Algoritmo di cifratura (`HS256`) hardcoded — scelta architetturale, non configurazione operativa
 
 ---
 
 ## PROSSIMI PASSI
 
-1. dobbiamo fare il merge su main ( che punta al first commit ) della sessione di oggi
-2. **Frontend React** — consuma tutte le API
-3. **Deploy** — Railway o Render con CI/CD da GitHub
-4. **Alembic** — migration per cambi schema in produzione
-5. **Ruoli utente** — campo `is_admin` per proteggere endpoint admin
-6. **Refresh token** — per gestione logout e revoca sessioni
+1. **Chunking degli articoli** — CRITICO. Attualmente un solo embedding per
+   articolo (`to_embedding_text()` = titolo + contenuto intero). Su contenuti
+   lunghi il modello tronca e l'embedding diventa una media semantica poco
+   utile. Serve: tabella `chunks` con FK all'articolo, embedding per chunk,
+   ricerca sui chunk con deduplica per articolo, revisione dell'hybrid search
+2. **Markdown per gli articoli** — formato del campo `content`, rendering, e
+   uso della struttura (sezioni, heading) come guida per il chunking semantico
+3. **`set_prod_env.sh`** — script per l'ambiente di produzione (segreti non
+   rigenerati a ogni run, `ENVIRONMENT=production`, niente mock data)
+4. **Frontend React** — consuma tutte le API
+5. **Deploy** — Railway o Render con CI/CD da GitHub
+6. **Alembic** — migration per cambi schema in produzione
+7. **Ruoli utente** — campo `is_admin` per proteggere endpoint admin
+8. **Refresh token** — per gestione logout e revoca sessioni
 
 ---
 
@@ -230,9 +283,14 @@ Il testo embeddato è `f"{title} {content}"` — logica centralizzata in `Articl
 - `entities.py` → classi SQLAlchemy (ORM, mapping tabelle DB)
 - `models.py` → classi Pydantic (API, validazione input/output)
 - `database.py` → engine, SessionLocal, Base, get_db
+- `config.py` → Settings centralizzato, unica fonte di configurazione
 - `auth.py` → logica JWT e bcrypt, NON importa `entities` direttamente
 - `permissions.py` → duck typing, nessun import di entities necessario
 - `embedding/` → client Ollama, stesso pattern di `database.py` per PostgreSQL
+- `settings` in `config.py` è istanziato a livello di modulo: costruito una volta al primo import, condiviso da tutti i moduli
+- pydantic-settings dà priorità all'ambiente sulla secrets directory — un segreto non deve mai stare in entrambi
+- I file dei segreti non devono avere newline finale: generarli con `printf '%s'`, non con `echo` o redirezione diretta
+- Cambiare un segreto già usato da un DB inizializzato richiede `down -v` — Postgres imposta la password solo al primo init del volume
 - Full-text search usa `plainto_tsquery` (non `to_tsquery`) per gestire spazi
 - Configurazione linguistica `simple` per testi tecnici misti italiano/inglese
 - Route statiche (`/articles/search`) devono precedere route dinamiche (`/articles/{id}`)

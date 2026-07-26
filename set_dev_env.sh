@@ -13,17 +13,32 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 echo "✓ Docker Compose found: $(docker compose version --short)"
 
-# --- 2. Generate .env.development ---
+# --- 2. Generate secret files (never overwrite existing ones) ---
+mkdir -p secrets
+
+if [ -f secrets/postgres_password ]; then
+    echo "✓ secrets/postgres_password already exists, leaving it untouched."
+else
+    printf '%s' "$(openssl rand -hex 24)" > secrets/postgres_password
+    echo "✓ secrets/postgres_password created."
+fi
+
+if [ -f secrets/secret_key ]; then
+    echo "✓ secrets/secret_key already exists, leaving it untouched."
+else
+    printf '%s' "$(openssl rand -hex 32)" > secrets/secret_key
+    echo "✓ secrets/secret_key created."
+fi
+
+# --- 3. Generate .env.development (config only, no secrets) ---
 if [ -f .env.development ]; then
     echo "✓ .env.development already exists, leaving it untouched."
 else
     cp .env.example .env.development
-    sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -hex 24)|" .env.development
-    sed -i "s|^SECRET_KEY=.*|SECRET_KEY=$(openssl rand -hex 32)|" .env.development
-    echo "✓ .env.development created with generated secrets."
+    echo "✓ .env.development created."
 fi
 
-# --- 3. Final message ---
+# --- 4. Final message ---
 cat <<'MSG'
 
 Dev environment ready. Useful commands:

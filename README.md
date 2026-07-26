@@ -18,11 +18,13 @@ docker compose -f docker-compose.yml -f docker-compose.override.yml up -d --buil
 ```
 
 `set_dev_env.sh` prepares a ready-to-run development/test environment: it
-creates `.env.development` from `.env.example`, generating the required
-secrets (`POSTGRES_PASSWORD`, `SECRET_KEY`) automatically so the stack works
-out of the box. `.env.development` is the env file loaded by every service in
-`docker-compose.yml`, which is why that exact filename is expected. The first
-startup also downloads the Ollama embedding model, so it may take a while.
+generates the required secrets (`postgres_password`, `secret_key`) as files
+under `secrets/`, and creates `.env.development` (non-sensitive config only)
+from `.env.example`. The secret files are mounted into the containers as Docker
+secrets under `/run/secrets/`, while `.env.development` provides the rest of the
+configuration. The script is idempotent: existing secrets are never
+overwritten. The first startup also downloads the Ollama embedding model, so it
+may take a while.
 
 Once running:
 
@@ -42,8 +44,8 @@ docker compose down -v
 ## Production
 
 This Compose setup targets local development and testing only (bind-mounted
-code, mock data, secrets in a local `.env` file). A production deployment will
-work differently and is still a TODO. See the next steps in [CLAUDE.md](CLAUDE.md).
+code, mock data, secrets generated locally). A production deployment will work
+differently and is still a TODO. See the next steps in [CLAUDE.md](CLAUDE.md).
 
 ## Documentation
 
